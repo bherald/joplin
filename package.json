@@ -128,6 +128,12 @@
     "depd@npm:2.0.0": "patch:depd@npm%3A2.0.0#~/.yarn/patches/depd-npm-2.0.0-b6c51a4b43.patch",
     "depd@npm:^1.1.2": "patch:depd@npm%3A2.0.0#~/.yarn/patches/depd-npm-2.0.0-b6c51a4b43.patch",
     "depd@npm:^1.1.0": "patch:depd@npm%3A2.0.0#~/.yarn/patches/depd-npm-2.0.0-b6c51a4b43.patch",
-    "formidable@npm:^2.0.1": "patch:formidable@npm%3A2.1.2#~/.yarn/patches/formidable-npm-2.1.2-40ba18d67f.patch"
+    "formidable@npm:^2.0.1": "patch:formidable@npm%3A2.1.2#~/.yarn/patches/formidable-npm-2.1.2-40ba18d67f.patch",
+    "react-native-zip-archive@7.0.2": "patch:react-native-zip-archive@npm%3A7.0.2#./.yarn/patches/react-native-zip-archive-npm-7.0.2-3b301bc8af.patch",
+    "react-native-file-viewer@2.1.5": "patch:react-native-file-viewer@npm%3A2.1.5#./.yarn/patches/react-native-file-viewer-npm-2.1.5-8be784045c.patch",
+    "react-native-quick-actions@0.3.13": "patch:react-native-quick-actions@npm%3A0.3.13#./.yarn/patches/react-native-quick-actions-npm-0.3.13-eb0753e0b7.patch",
+    "react-native-rsa-native@2.0.5": "patch:react-native-rsa-native@npm%3A2.0.5#./.yarn/patches/react-native-rsa-native-npm-2.0.5-4664e1ce79.patch",
+    "react-native-securerandom@1.0.1": "patch:react-native-securerandom@npm%3A1.0.1#./.yarn/patches/react-native-securerandom-npm-1.0.1-76aed50761.patch",
+    "react-native-version-info@1.1.1": "patch:react-native-version-info@npm%3A1.1.1#./.yarn/patches/react-native-version-info-npm-1.1.1-73b309e950.patch"
   }
 }

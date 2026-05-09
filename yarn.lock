@@ -12428,6 +12428,7 @@ __metadata:
     react-native-file-viewer: "npm:2.1.5"
     react-native-get-random-values: "npm:1.11.0"
     react-native-image-picker: "npm:8.2.1"
+    react-native-keychain: "npm:^8.2.0"
     react-native-localize: "npm:3.6.1"
     react-native-modal-datetime-picker: "npm:18.0.0"
     react-native-nitro-modules: "npm:0.33.7"
@@ -49166,6 +49167,13 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10/d726950f2ab025462f5fbb788b2331672fc5bca1ac44899892736448ed3ee2d3ea49db9d6fee3bcbba4b4e064efeb646924e1cbd8522a23edd28c960f1db66aa
+  languageName: node
+  linkType: hard
+
+"react-native-keychain@npm:^8.2.0":
+  version: 8.2.0
+  resolution: "react-native-keychain@npm:8.2.0"
+  checksum: 10/c8a9c4412a608fe2f2d9789e98881049ead043c18c6def97051b6459f06d0aeacd4663863cd343871ecbc341373a0d0e2ee7f54a041ab07e20bca157eafb83c9
   languageName: node
   linkType: hard
 

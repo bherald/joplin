@@ -1,31 +1,79 @@
+diff --git a/platforms/android/build.gradle b/platforms/android/build.gradle
+index ff79b10c94a1d7ee2fadaaaceee7d4eefb55313e..e8376475df9c22210468ec915e2d7feaf7cd1b82 100644
+--- a/platforms/android/build.gradle
++++ b/platforms/android/build.gradle
+@@ -16,6 +16,7 @@ def safeExtGet(prop, fallback) {
+ }
+
+ android {
++    namespace "org.pgsqlite"
+     compileSdkVersion safeExtGet('compileSdkVersion', 23)
+     buildToolsVersion safeExtGet('buildToolsVersion', '27.0.3')
+
+@@ -40,4 +41,6 @@ repositories {
+
+ dependencies {
+     implementation 'com.facebook.react:react-native:+'
++    implementation 'net.zetetic:android-database-sqlcipher:4.5.4'
++    implementation 'androidx.sqlite:sqlite:2.1.0'
+ }
 diff --git a/platforms/android/src/main/java/org/pgsqlite/SQLitePlugin.java b/platforms/android/src/main/java/org/pgsqlite/SQLitePlugin.java
-index 4f2391b..f7cc433 100644
+index 4f2391b6784136d182fa9665c046cb8a1794a794..d30b744f145aef7c7cb80ace4bab0a97e2b5fd9a 100644
 --- a/platforms/android/src/main/java/org/pgsqlite/SQLitePlugin.java
 +++ b/platforms/android/src/main/java/org/pgsqlite/SQLitePlugin.java
 @@ -8,11 +8,14 @@
  package org.pgsqlite;
- 
+
  import android.annotation.SuppressLint;
 +import android.database.AbstractWindowedCursor;
  import android.database.Cursor;
+-import android.database.sqlite.SQLiteDatabase;
 +import android.database.CursorWindow;
- import android.database.sqlite.SQLiteDatabase;
  import android.database.sqlite.SQLiteException;
- import android.database.sqlite.SQLiteStatement;
+-import android.database.sqlite.SQLiteStatement;
++import net.sqlcipher.database.SQLiteDatabase;
++import net.sqlcipher.database.SQLiteStatement;
  import android.content.Context;
 +import android.os.Build;
  import android.util.Base64;
- 
+
  import java.io.Closeable;
-@@ -808,6 +811,17 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+@@ -76,6 +79,8 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+         super(reactContext);
+         this.context = reactContext.getApplicationContext();
+         this.threadPool = Executors.newCachedThreadPool();
++        // Load SQLCipher native libraries
++        SQLiteDatabase.loadLibs(this.context);
+     }
+
+     /**
+@@ -335,7 +340,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+      * @return instance of SQLite database
+      * @throws Exception
+      */
+-    private SQLiteDatabase openDatabase(String dbname, String assetFilePath, int openFlags, CallbackContext cbc) throws Exception {
++    private SQLiteDatabase openDatabase(String dbname, String assetFilePath, int openFlags, String password, CallbackContext cbc) throws Exception {
+         InputStream in = null;
+         File dbfile = null;
+         try {
+@@ -411,7 +416,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+
+             FLog.v(TAG, "DB file is ready, proceeding to OPEN SQLite DB: " + dbfile.getAbsolutePath());
+
+-            SQLiteDatabase mydb = SQLiteDatabase.openDatabase(dbfile.getAbsolutePath(), null, openFlags);
++            SQLiteDatabase mydb = SQLiteDatabase.openDatabase(dbfile.getAbsolutePath(), password, null, openFlags);
+
+             if (cbc != null)
+                 cbc.success("Database opened");
+@@ -808,6 +813,17 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
                  throw ex;
              }
- 
+
 +            // To try to fix the error "Row too big to fit into CursorWindow" when using sqlite binary bundled with the device
 +            // https://github.com/andpor/react-native-sqlite-storage/issues/364#issuecomment-526423153
 +            // https://github.com/laurent22/joplin/issues/1767#issuecomment-515617991
 +
-+            if (cur != null && Build.VERSION.SDK_INT >= 28) {
++            if (cur instanceof AbstractWindowedCursor && Build.VERSION.SDK_INT >= 28) {
 +                CursorWindow cw = new CursorWindow(null, 50 * 1024 * 1024);
 +                AbstractWindowedCursor ac = (AbstractWindowedCursor) cur;
 +                ac.setWindow(cw);
@@ -35,3 +83,36 @@ index 4f2391b..f7cc433 100644
              // If query result has rows
              if (cur != null && cur.moveToFirst()) {
                  WritableArray rowsArrayResult = Arguments.createArray();
+@@ -873,6 +889,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+         final int openFlags;
+         private String assetFilename;
+         private boolean androidLockWorkaround;
++        private String password;
+         final BlockingQueue<DBQuery> q;
+         final CallbackContext openCbc;
+
+@@ -891,6 +908,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+                 FLog.e(TAG,"Error retrieving assetFilename or mode from options:",ex);
+             }
+             this.openFlags = openFlags;
++            this.password = SQLitePluginConverter.getString(options,"key","");
+             this.androidLockWorkaround = SQLitePluginConverter.getBoolean(options,"androidLockWorkaround",false);
+             if (this.androidLockWorkaround)
+                 FLog.i(TAG, "Android db closing/locking workaround applied");
+@@ -901,7 +919,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+
+         public void run() {
+             try {
+-                this.mydb = openDatabase(dbname, this.assetFilename, this.openFlags, this.openCbc);
++                this.mydb = openDatabase(dbname, this.assetFilename, this.openFlags, this.password, this.openCbc);
+             } catch (SQLiteException ex) {
+                 FLog.e(TAG, "SQLite error opening database, stopping db thread", ex);
+                 if (this.openCbc != null) {
+@@ -930,7 +948,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
+                     if (androidLockWorkaround && dbq.queries.length == 1 && dbq.queries[0].equals("COMMIT")) {
+                         // FLog.v(TAG, "close and reopen db");
+                         closeDatabaseNow(dbname);
+-                        this.mydb = openDatabase(dbname, "", this.openFlags, null);
++                        this.mydb = openDatabase(dbname, "", this.openFlags, this.password, null);
+                         // FLog.v(TAG, "close and reopen db finished");
+                     }

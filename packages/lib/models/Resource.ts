@@ -68,6 +68,12 @@ export default class Resource extends BaseItem {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
 	public static fsDriver_: any;
 
+	// Optional hook set by app-mobile on Android to decrypt a locally-encrypted
+	// resource file to a temp path before it is uploaded to the sync target.
+	// Returns the path to use (either the original or a temp file path).
+	// If it returns a different (temp) path, the caller MUST delete it when done.
+	public static syncUploadDecryptHook: ((path: string)=> Promise<string>) | null = null;
+
 	public static tableName() {
 		return 'resources';
 	}
@@ -241,24 +247,44 @@ export default class Resource extends BaseItem {
 	// if the resource is encrypted, but will be 0 locally because the device has the decrypted resource.
 	public static async fullPathForSyncUpload(resource: ResourceEntity) {
 		const plainTextPath = this.fullPath(resource);
-
 		const share = resource.share_id ? await this.shareService().shareById(resource.share_id) : null;
+		const decryptedSource = async () => {
+			const sourcePath = Resource.syncUploadDecryptHook
+				? await Resource.syncUploadDecryptHook(plainTextPath)
+				: plainTextPath;
+			return {
+				path: sourcePath,
+				tempPath: sourcePath !== plainTextPath ? sourcePath : null,
+			};
+		};
 
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
 		if (!getEncryptionEnabled() || !itemCanBeEncrypted(resource as any, share)) {
 			// Normally not possible since itemsThatNeedSync should only return decrypted items
 			if (resource.encryption_blob_encrypted) throw new Error('Trying to access encrypted resource but encryption is currently disabled');
-			return { path: plainTextPath, resource: resource };
+			const source = await decryptedSource();
+			return { path: source.path, resource: resource, tempPath: source.tempPath };
 		}
 
 		const encryptedPath = this.fullPath(resource, true);
-		if (resource.encryption_blob_encrypted) return { path: encryptedPath, resource: resource };
+		if (resource.encryption_blob_encrypted) return { path: encryptedPath, resource: resource, tempPath: null };
+
+		// If at-rest encryption is active, resolve to a decrypted temp path before
+		// E2EE processing so E2EE receives plaintext, not JENC ciphertext.
+		const source = await decryptedSource();
 
 		try {
-			await this.encryptionService().encryptFile(plainTextPath, encryptedPath, {
+			await this.encryptionService().encryptFile(source.path, encryptedPath, {
 				masterKeyId: share && share.master_key_id ? share.master_key_id : '',
 			});
 		} catch (error) {
+			if (source.tempPath) {
+				try {
+					await this.fsDriver().remove(source.tempPath);
+				} catch (_) {
+					// Ignore cleanup errors and report the original encryption error.
+				}
+			}
 			if (error.code === 'ENOENT') {
 				throw new JoplinError(
 					`Trying to encrypt resource but only metadata is present: ${error.toString()}`, 'fileNotFound',
@@ -269,7 +295,7 @@ export default class Resource extends BaseItem {
 
 		const resourceCopy = { ...resource };
 		resourceCopy.encryption_blob_encrypted = 1;
-		return { path: encryptedPath, resource: resourceCopy };
+		return { path: encryptedPath, resource: resourceCopy, tempPath: source.tempPath };
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied

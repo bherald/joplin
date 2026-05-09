@@ -94,10 +94,11 @@ describe('renderBlockImages', () => {
 		{ spaceBefore: '', spaceAfter: '', alt: 'This is a test!', width: null },
 		{ spaceBefore: '   ', spaceAfter: ' ', alt: 'test', width: null },
 		{ spaceBefore: '', spaceAfter: '', alt: '!!!!', width: '500' },
-	])('should render HTML img tags (case %#)', async ({ spaceBefore, spaceAfter, alt, width }) => {
+		{ spaceBefore: '', spaceAfter: '', alt: 'relative', width: null, src: './0123456789abcdef0123456789abcdef' },
+	])('should render HTML img tags (case %#)', async ({ spaceBefore, spaceAfter, alt, width, src }) => {
 		const widthAttr = width ? ` width="${width}"` : '';
 		const editor = await createEditor(
-			`${spaceBefore}<img src=":/0123456789abcdef0123456789abcdef" alt="${alt}"${widthAttr} />${spaceAfter}`,
+			`${spaceBefore}<img src="${src ?? ':/0123456789abcdef0123456789abcdef'}" alt="${alt}"${widthAttr} />${spaceAfter}`,
 			['HTMLTag'],
 		);
 

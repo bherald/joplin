@@ -100,6 +100,9 @@ const config = {
 		),
 	},
 	projectRoot: path.resolve(__dirname),
+	server: {
+		unstable_serverRoot: path.resolve(__dirname),
+	},
 	watchFolders: watchedFolders,
 };
 

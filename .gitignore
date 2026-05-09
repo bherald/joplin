@@ -984,6 +984,9 @@ packages/app-mobile/utils/initReact.web.js
 packages/app-mobile/utils/initializeCommandService.js
 packages/app-mobile/utils/ipc/RNToWebViewMessenger.js
 packages/app-mobile/utils/ipc/WebViewToRNMessenger.js
+packages/app-mobile/utils/localEncryption/htmlResourceDecryptor.js
+packages/app-mobile/utils/localEncryption/keyManager.js
+packages/app-mobile/utils/localEncryption/resourceCrypto.js
 packages/app-mobile/utils/lockToSingleInstance.js
 packages/app-mobile/utils/makeShowMessageBox.test.js
 packages/app-mobile/utils/makeShowMessageBox.js

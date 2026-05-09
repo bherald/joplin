@@ -1,0 +1,11 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 50dd48921f250f00af04c0fbe21bded5b37cea84..b43a5a4746ba9705a3bc5631628311ae6939f8ec 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -3,6 +3,7 @@ def safeExtGet(prop, fallback) {
+     rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+ }
+ android {
++    namespace "com.reactNativeQuickActions"
+     compileSdkVersion safeExtGet('compileSdkVersion', 25)
+     buildToolsVersion safeExtGet('buildToolsVersion', '25.0.2')

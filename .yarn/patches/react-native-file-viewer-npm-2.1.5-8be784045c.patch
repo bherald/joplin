@@ -1,0 +1,11 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 5016f0c555f6abd6160387591e4752fa2d5f0b1a..d7cf92e4a45c36f0435fdc2862ae3ba87dab5db9 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -5,6 +5,7 @@ def safeExtGet(prop, fallback) {
+ }
+
+ android {
++    namespace "com.vinzscam.reactnativefileviewer"
+     compileSdkVersion safeExtGet('compileSdkVersion', 28)
+     buildToolsVersion safeExtGet('buildToolsVersion', '28.0.3')

@@ -93,6 +93,10 @@ import { Platform } from 'react-native';
 import VoiceTyping from '../services/voiceTyping/VoiceTyping';
 import whisper from '../services/voiceTyping/whisper';
 import PerFolderSortOrderService from '@joplin/lib/services/sortOrder/PerFolderSortOrderService';
+import { getOrCreateEncryptionKey } from './localEncryption/keyManager';
+import { decryptToTempFile, encryptFileInPlace, prepareResourcesForDisplay } from './localEncryption/resourceCrypto';
+import { setHtmlDecryptHook } from './localEncryption/htmlResourceDecryptor';
+import eventManager, { EventName, ResourceChangeEvent } from '@joplin/lib/eventManager';
 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
@@ -135,6 +139,28 @@ const getInitialActiveFolder = async () => {
 	return await Folder.load(folderId);
 };
 
+const encryptExistingResourcesInBackground = async (localEncryptionKey: string) => {
+	const resources = await Resource.all({
+		fields: ['id', 'mime', 'file_extension'],
+	});
+
+	let encryptedCount = 0;
+
+	for (const resource of resources) {
+		const path = Resource.fullPath(resource);
+		if (!await Resource.fsDriver().exists(path)) continue;
+
+		try {
+			await encryptFileInPlace(path, localEncryptionKey);
+			encryptedCount++;
+		} catch (error) {
+			reg.logger().warn(`Could not encrypt local resource ${resource.id}: ${error}`);
+		}
+	}
+
+	reg.logger().info(`Local resource encryption check complete: ${encryptedCount} files checked`);
+};
+
 const buildStartupTasks = (
 	dispatch: Dispatch, store: Store<AppState>,
 ) => {
@@ -149,6 +175,7 @@ const buildStartupTasks = (
 	let isSubProfile: boolean;
 	let currentProfile: Profile;
 	let singleInstanceLock: Promise<void>;
+	let localEncryptionKey = '';
 
 
 	addTask('buildStartupTasks/prepare single instance lock', async () => {
@@ -159,6 +186,11 @@ const buildStartupTasks = (
 
 	addTask('buildStartupTasks/shimInit', async () => {
 		shimInit();
+	});
+	addTask('buildStartupTasks/initLocalEncryption', async () => {
+		if (Platform.OS === 'android') {
+			localEncryptionKey = await getOrCreateEncryptionKey();
+		}
 	});
 	addTask('buildStartupTasks/initProfile', async () => {
 		const profile = await initProfile(getProfilesRootDir());
@@ -187,6 +219,36 @@ const buildStartupTasks = (
 	});
 	addTask('buildStartupTasks/make resource directory', async () => {
 		await shim.fsDriver().mkdir(Setting.value('resourceDir'));
+
+		// Clean up any .tmp_decrypt files left over from sync upload in a previous session.
+		if (Platform.OS === 'android') {
+			const resourceDir = Setting.value('resourceDir');
+			try {
+				const stats = await shim.fsDriver().readDirStats(resourceDir);
+				for (const stat of stats) {
+					if (!stat.isDirectory() && stat.path.endsWith('.tmp_decrypt')) {
+						try { await shim.fsDriver().remove(`${resourceDir}/${stat.path}`); } catch (_) { /* ok */ }
+					}
+				}
+			} catch (_) { /* ok if resourceDir doesn't exist yet */ }
+		}
+
+		// On Android, register the HTML hook that decrypts resource files before WebView display.
+		if (Platform.OS === 'android' && localEncryptionKey) {
+			const tempDecryptDir = `${Setting.value('resourceDir')}/.webview_decrypted`;
+			// Clean up any stale decrypted files from a previous session.
+			try { await shim.fsDriver().remove(tempDecryptDir); } catch (_) { /* ok */ }
+			await shim.fsDriver().mkdir(tempDecryptDir);
+
+			setHtmlDecryptHook(async (html: string) => {
+				return prepareResourcesForDisplay(
+					html,
+					Setting.value('resourceDir'),
+					tempDecryptDir,
+					localEncryptionKey,
+				);
+			});
+		}
 	});
 	addTask('buildStartupTasks/singleInstanceLock', async () => {
 		// Do as much setup as possible before checking the lock -- the lock intentionally waits for
@@ -195,7 +257,7 @@ const buildStartupTasks = (
 	});
 	addTask('buildStartupTasks/set up logger', async () => {
 		logDatabase = new Database(new DatabaseDriverReactNative());
-		await logDatabase.open({ name: 'log.sqlite' });
+		await logDatabase.open({ name: 'log.sqlite', key: localEncryptionKey || undefined });
 		await logDatabase.exec(Logger.databaseCreateTableSql());
 
 		const mainLogger = new Logger();
@@ -258,7 +320,8 @@ const buildStartupTasks = (
 		AlarmService.setDriver(new AlarmServiceDriver(reg.logger()));
 	});
 	addTask('buildStartupTasks/openDatabase', async () => {
-		await db.open({ name: getDatabaseName(currentProfile, isSubProfile) });
+		const dbOptions = { name: getDatabaseName(currentProfile, isSubProfile), key: localEncryptionKey || undefined };
+		await db.open(dbOptions);
 		// if (Setting.value('env') === 'dev') await db.clearForTesting();
 	});
 	addTask('buildStartupTasks/setUpSettings', async () => {
@@ -322,6 +385,17 @@ const buildStartupTasks = (
 				await setIgnoreTlsErrors(ignoreTlsErrors);
 			}
 		}
+	});
+	addTask('buildStartupTasks/encrypt existing resources', async () => {
+		if (Platform.OS !== 'android' || !localEncryptionKey) return;
+
+		void (async () => {
+			try {
+				await encryptExistingResourcesInBackground(localEncryptionKey);
+			} catch (error) {
+				reg.logger().warn(`Local resource encryption check failed: ${error}`);
+			}
+		})();
 	});
 	addTask('buildStartupTasks/import plugin assets', async () => {
 		await PluginAssetsLoader.instance().importAssets();
@@ -426,6 +500,46 @@ const buildStartupTasks = (
 		ResourceFetcher.instance().setLogger(reg.logger());
 		ResourceFetcher.instance().dispatch = dispatch;
 		ResourceFetcher.instance().on('downloadComplete', resourceFetcher_downloadComplete);
+
+		// On Android, wire at-rest encryption into the resource lifecycle.
+		if (Platform.OS === 'android' && localEncryptionKey) {
+			const encryptResource = async (resourceId: string) => {
+				try {
+					const resource = await Resource.load(resourceId);
+					if (resource) await encryptFileInPlace(Resource.fullPath(resource), localEncryptionKey);
+				} catch (_err) {
+					// Non-fatal
+				}
+			};
+
+			// After a NON-E2EE resource is downloaded from sync, encrypt it on disk.
+			ResourceFetcher.instance().on('downloadComplete', async (event: { id: string; encrypted: boolean }) => {
+				if (event.encrypted) return; // E2EE blob — DecryptionWorker will apply at-rest after decryption
+				await encryptResource(event.id);
+			});
+
+			// After E2EE decrypts a resource blob, apply at-rest encryption.
+			DecryptionWorker.instance().on('resourceDecrypted', async (event: { id: string }) => {
+				await encryptResource(event.id);
+			});
+
+			// Newly-created local attachments are saved through Resource.save after
+			// the blob has already been copied into place.
+			eventManager.on(EventName.ResourceCreate, async (event: ResourceChangeEvent) => {
+				await encryptResource(event.id);
+			});
+
+			// Decrypt at-rest-encrypted resource files to a temp path before sync reads them.
+			// This path is set BEFORE E2EE processing so E2EE receives the actual plaintext.
+			Resource.syncUploadDecryptHook = async (path: string) => {
+				try {
+					return await decryptToTempFile(path, localEncryptionKey);
+				} catch (_err) {
+					return path;
+				}
+			};
+		}
+
 		void ResourceFetcher.instance().start();
 
 		reg.setupRecurrentSync();

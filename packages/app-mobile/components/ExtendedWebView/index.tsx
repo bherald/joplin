@@ -14,6 +14,7 @@ import Logger from '@joplin/utils/Logger';
 import { Props, WebViewControl } from './types';
 import useCss from './utils/useCss';
 import { Platform } from 'react-native';
+import { htmlDecryptHook } from '../../utils/localEncryption/htmlResourceDecryptor';
 
 const logger = Logger.create('ExtendedWebView');
 
@@ -56,7 +57,10 @@ const ExtendedWebView = (props: Props, ref: Ref<WebViewControl>) => {
 		let cancelled = false;
 		async function createHtmlFile() {
 			const tempFile = `${baseDirectory}/${props.webviewInstanceId}.html`;
-			await shim.fsDriver().writeFile(tempFile, props.html, 'utf8');
+			// On Android, decrypt any encrypted resource files referenced in the HTML
+			// before writing the temp file that the WebView will load.
+			const htmlToWrite = htmlDecryptHook ? await htmlDecryptHook(props.html) : props.html;
+			await shim.fsDriver().writeFile(tempFile, htmlToWrite, 'utf8');
 			if (cancelled) return;
 
 			// Now that we are sending back a file instead of an HTML string, we're always sending back the

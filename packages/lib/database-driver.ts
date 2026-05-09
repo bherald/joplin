@@ -1,6 +1,7 @@
 
 interface DatabaseOptions {
 	name: string;
+	key?: string;
 }
 export type DatabaseOpenOptions = DatabaseOptions;
 export type DatabaseCloseOptions = DatabaseOptions;

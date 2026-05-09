@@ -1,4 +1,5 @@
 const SQLite = require('react-native-sqlite-storage');
+import RNFS from '@dr.pogodin/react-native-fs';
 import DatabaseDriver, { DatabaseCloseOptions, DatabaseOpenOptions } from '@joplin/lib/database-driver';
 
 export default class DatabaseDriverReactNative implements DatabaseDriver {
@@ -9,21 +10,88 @@ export default class DatabaseDriverReactNative implements DatabaseDriver {
 		this.lastInsertId_ = null;
 	}
 
-	public open(options: DatabaseOpenOptions) {
+	private openDatabase_(options: DatabaseOpenOptions) {
 		// SQLite.DEBUG(true);
-		return new Promise<void>((resolve, reject) => {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
+		return new Promise<any>((resolve, reject) => {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SQLCipher key option
+			const dbOptions: any = { name: options.name };
+			if (options.key) dbOptions.key = options.key;
 			SQLite.openDatabase(
-				{ name: options.name },
+				dbOptions,
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
 				(db: any) => {
-					this.db_ = db;
-					resolve();
+					resolve(db);
 				},
 				(error: Error) => {
 					reject(error);
 				},
 			);
 		});
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
+	private closeDatabase_(db: any) {
+		return new Promise<void>((resolve, reject) => {
+			db.close(resolve, (error: Error) => reject(error));
+		});
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
+	private executeSql_(db: any, sql: string, params: unknown[] = []) {
+		return new Promise<void>((resolve, reject) => {
+			db.executeSql(sql, params, () => resolve(), (error: Error) => reject(error));
+		});
+	}
+
+	private quoteSqlString_(value: string) {
+		return `'${value.replace(/'/g, '\'\'')}'`;
+	}
+
+	private async migratePlaintextDatabase_(options: DatabaseOpenOptions) {
+		const encryptedDatabasePath = `${options.name}.encrypted`;
+		if (await RNFS.exists(encryptedDatabasePath)) await RNFS.unlink(encryptedDatabasePath);
+
+		const plaintextDb = await this.openDatabase_({ name: options.name });
+		try {
+			await this.executeSql_(plaintextDb, 'PRAGMA wal_checkpoint(FULL)');
+			await this.executeSql_(plaintextDb, 'PRAGMA journal_mode=DELETE');
+			await this.executeSql_(
+				plaintextDb,
+				`ATTACH DATABASE ${this.quoteSqlString_(encryptedDatabasePath)} AS encrypted KEY ${this.quoteSqlString_(options.key)}`,
+			);
+			await this.executeSql_(plaintextDb, 'SELECT sqlcipher_export(\'encrypted\')');
+			await this.executeSql_(plaintextDb, 'DETACH DATABASE encrypted');
+		} finally {
+			await this.closeDatabase_(plaintextDb);
+		}
+
+		const backupPath = `${options.name}.plaintext-backup-${Date.now()}`;
+		await RNFS.moveFile(options.name, backupPath);
+		for (const suffix of ['-wal', '-shm']) {
+			const sidecarPath = `${options.name}${suffix}`;
+			if (await RNFS.exists(sidecarPath)) await RNFS.moveFile(sidecarPath, `${backupPath}${suffix}`);
+		}
+		await RNFS.moveFile(encryptedDatabasePath, options.name);
+	}
+
+	public async open(options: DatabaseOpenOptions) {
+		if (!options.key) {
+			this.db_ = await this.openDatabase_(options);
+			return;
+		}
+
+		try {
+			this.db_ = await this.openDatabase_(options);
+			return;
+		} catch (encryptedOpenError) {
+			try {
+				await this.migratePlaintextDatabase_(options);
+			} catch {
+				throw encryptedOpenError;
+			}
+			this.db_ = await this.openDatabase_(options);
+		}
 	}
 
 	public deleteDatabase(options: DatabaseCloseOptions) {

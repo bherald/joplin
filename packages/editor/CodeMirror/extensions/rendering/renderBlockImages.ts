@@ -1,6 +1,6 @@
-import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
 import { SyntaxNodeRef } from '@lezer/common';
-import { EditorState, StateEffect, Transaction } from '@codemirror/state';
+import { EditorState, Range, StateEffect, Transaction } from '@codemirror/state';
 import { RenderedContentContext } from './types';
 import makeBlockReplaceExtension from './utils/makeBlockReplaceExtension';
 
@@ -32,6 +32,14 @@ class ImageHeightCache {
 }
 
 const imageHeightCache = new ImageHeightCache();
+
+const resourceImageSrcRegex = /^(?::\/|\.\/)([a-zA-Z0-9]{32})(?:[?#].*)?$/;
+const resourceImageSrcSearchRegex = /(?::\/|\.\/)([a-zA-Z0-9]{32})(?:[?#][^\s"')]*)?/;
+
+const normalizeResourceImageSrc = (src: string): string | null => {
+	const match = src.match(resourceImageSrcRegex);
+	return match ? `:/${match[1]}` : null;
+};
 
 class ImageWidget extends WidgetType {
 	private resolvedSrc_: string;
@@ -138,16 +146,93 @@ class ImageWidget extends WidgetType {
 	}
 }
 
+class InlineImageWidget extends WidgetType {
+	private resolvedSrc_: string;
+
+	public constructor(
+		private readonly context_: RenderedContentContext,
+		private readonly src_: string,
+		private readonly alt_: string,
+		private readonly reloadCounter_ = 0,
+		private readonly width_: string | null = null,
+	) {
+		super();
+	}
+
+	public eq(other: InlineImageWidget) {
+		return this.src_ === other.src_ && this.alt_ === other.alt_ && this.reloadCounter_ === other.reloadCounter_ && this.width_ === other.width_;
+	}
+
+	public updateDOM(dom: HTMLElement): boolean {
+		const image = dom.querySelector<HTMLImageElement>('img.image');
+		if (!image) return false;
+
+		image.ariaLabel = this.alt_;
+		image.role = 'image';
+
+		if (this.width_) {
+			image.style.width = `${this.width_}px`;
+			image.style.height = 'auto';
+		} else {
+			image.style.width = '';
+			image.style.height = '';
+		}
+
+		const updateImageUrl = () => {
+			if (this.resolvedSrc_) {
+				image.src = this.resolvedSrc_;
+			}
+		};
+
+		if (!this.resolvedSrc_) {
+			void (async () => {
+				this.resolvedSrc_ = await this.context_.resolveImageSrc(this.src_, this.reloadCounter_);
+				updateImageUrl();
+			})();
+		} else {
+			updateImageUrl();
+		}
+
+		return true;
+	}
+
+	public toDOM() {
+		const container = document.createElement('span');
+		container.classList.add('cm-md-inline-image');
+
+		const image = document.createElement('img');
+		image.classList.add('image');
+
+		container.appendChild(image);
+		this.updateDOM(container);
+
+		return container;
+	}
+
+	public ignoreEvent() {
+		return true;
+	}
+}
+
 const getImageSrc = (node: SyntaxNodeRef, state: EditorState) => {
 	const nodeText = state.sliceDoc(node.from, node.to);
 	// For now, only render Joplin resource images (avoid auto-fetching images from
 	// the internet if just the Markdown editor is open).
-	const match = nodeText.match(/:\/[a-zA-Z0-9]{32}/);
+	const match = nodeText.match(resourceImageSrcSearchRegex);
 	if (match) {
-		return match[0];
+		return `:/${match[1]}`;
 	} else {
 		return null;
 	}
+};
+
+const nodeIsOnlyContentOnLine = (node: SyntaxNodeRef, state: EditorState) => {
+	const lineFrom = state.doc.lineAt(node.from);
+	const lineTo = state.doc.lineAt(node.to);
+	const textBefore = state.sliceDoc(lineFrom.from, node.from);
+	const textAfter = state.sliceDoc(node.to, lineTo.to);
+
+	return textBefore.trim() === '' && textAfter.trim() === '';
 };
 
 const getImageAlt = (node: SyntaxNodeRef, state: EditorState) => {
@@ -167,31 +252,38 @@ interface HtmlImageInfo {
 	width: string | null;
 }
 
-const parseHtmlImage = (node: SyntaxNodeRef, state: EditorState): HtmlImageInfo | null => {
-	const nodeText = state.sliceDoc(node.from, node.to);
-
+const parseHtmlImageText = (nodeText: string): HtmlImageInfo | null => {
 	// Check if this is an img tag (handles both /> and > closing styles)
 	if (!nodeText.match(/<img\s/i)) {
 		return null;
 	}
 
 	// Extract src (only Joplin resource images, accepts single or double quotes)
-	const srcMatch = nodeText.match(/src=(["'])(:\/[a-zA-Z0-9]{32})\1/i);
+	const srcMatch = nodeText.match(/src\s*=\s*(["'])((?::\/|\.\/)[a-zA-Z0-9]{32}(?:[?#][^"']*)?)\1/i);
 	if (!srcMatch) {
 		return null;
 	}
 
+	const src = normalizeResourceImageSrc(srcMatch[2]);
+	if (!src) {
+		return null;
+	}
+
 	// Extract alt attribute (optional, accepts single or double quotes)
-	const altMatch = nodeText.match(/alt=(["'])([^"']*)\1/i);
+	const altMatch = nodeText.match(/alt\s*=\s*(["'])([^"']*)\1/i);
 
 	// Extract width attribute (optional, accepts single or double quotes)
-	const widthMatch = nodeText.match(/width=(["'])(\d+)\1/i);
+	const widthMatch = nodeText.match(/width\s*=\s*(["'])(\d+)\1/i);
 
 	return {
-		src: srcMatch[2],
+		src,
 		alt: altMatch ? altMatch[2] : null,
 		width: widthMatch ? widthMatch[2] : null,
 	};
+};
+
+const parseHtmlImage = (node: SyntaxNodeRef, state: EditorState): HtmlImageInfo | null => {
+	return parseHtmlImageText(state.sliceDoc(node.from, node.to));
 };
 
 // In Electron: To work around browser caching, these counters should continue to increase even if an old
@@ -204,6 +296,60 @@ export const testing__resetImageRefreshCounterCache = () => {
 	imageToRefreshCounters.clear();
 };
 
+const htmlImageTagRegex = /<img\b[^>]*>/gi;
+
+const rangeIsOnlyContentOnLine = (from: number, to: number, state: EditorState) => {
+	const lineFrom = state.doc.lineAt(from);
+	const lineTo = state.doc.lineAt(to);
+	const textBefore = state.sliceDoc(lineFrom.from, from);
+	const textAfter = state.sliceDoc(to, lineTo.to);
+
+	return textBefore.trim() === '' && textAfter.trim() === '';
+};
+
+const makeInlineHtmlImageExtension = (context: RenderedContentContext) => ViewPlugin.fromClass(class {
+	public decorations: DecorationSet;
+
+	public constructor(view: EditorView) {
+		this.decorations = this.buildDecorations(view);
+	}
+
+	private buildDecorations(view: EditorView) {
+		const widgets: Range<Decoration>[] = [];
+
+		for (const visibleRange of view.visibleRanges) {
+			const text = view.state.sliceDoc(visibleRange.from, visibleRange.to);
+			for (const match of text.matchAll(htmlImageTagRegex)) {
+				const tagText = match[0];
+				const imageInfo = parseHtmlImageText(tagText);
+				if (!imageInfo || match.index === undefined) {
+					continue;
+				}
+
+				const from = visibleRange.from + match.index;
+				const to = from + tagText.length;
+				if (rangeIsOnlyContentOnLine(from, to, view.state)) {
+					continue;
+				}
+
+				widgets.push(Decoration.replace({
+					widget: new InlineImageWidget(context, imageInfo.src, imageInfo.alt ?? '', imageToRefreshCounters.get(imageInfo.src) ?? 0, imageInfo.width),
+				}).range(from, to));
+			}
+		}
+
+		return Decoration.set(widgets, true);
+	}
+
+	public update(update: ViewUpdate) {
+		if (update.docChanged || update.viewportChanged || update.selectionSet) {
+			this.decorations = this.buildDecorations(update.view);
+		}
+	}
+}, {
+	decorations: view => view.decorations,
+});
+
 const renderBlockImages = (context: RenderedContentContext) => [
 	EditorView.theme({
 		[`& .${imageClassName} > .image`]: {
@@ -215,18 +361,27 @@ const renderBlockImages = (context: RenderedContentContext) => [
 			marginLeft: 'auto',
 			marginRight: 'auto',
 		},
+		'& .cm-md-inline-image': {
+			display: 'inline-block',
+			maxWidth: '100%',
+			verticalAlign: 'middle',
+		},
+		'& .cm-md-inline-image > .image': {
+			display: 'inline-block',
+			maxWidth: '100%',
+			minWidth: 0,
+			verticalAlign: 'middle',
+		},
 	}),
+	makeInlineHtmlImageExtension(context),
 	makeBlockReplaceExtension({
 		createDecoration: (node, state) => {
 			// Handle both markdown images and HTML img tags
 			if (node.name === 'Image' || node.name === 'HTMLTag' || node.name === 'HTMLBlock') {
-				const lineFrom = state.doc.lineAt(node.from);
-				const lineTo = state.doc.lineAt(node.to);
-				const textBefore = state.sliceDoc(lineFrom.from, node.from);
-				const textAfter = state.sliceDoc(node.to, lineTo.to);
-
 				// Only render images on their own line
-				if (textBefore.trim() === '' && textAfter.trim() === '') {
+				if (nodeIsOnlyContentOnLine(node, state)) {
+					const lineFrom = state.doc.lineAt(node.from);
+					const lineTo = state.doc.lineAt(node.to);
 					let src: string | null = null;
 					let alt: string | null = null;
 					let width: string | null = null;

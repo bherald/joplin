@@ -1,0 +1,11 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index b199afaba7cea95e358eafc5df400ae64edd888e..ce8faba139f10e27ee5582099937b9888ea59518 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -12,6 +12,7 @@ buildscript {
+ apply plugin: 'com.android.library'
+
+ android {
++    namespace "com.rnziparchive"
+     compileSdkVersion rootProject.ext.compileSdkVersion
+     buildToolsVersion rootProject.ext.buildToolsVersion

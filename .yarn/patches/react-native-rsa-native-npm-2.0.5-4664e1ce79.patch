@@ -1,0 +1,11 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 82f60d3d862258e50023076b0db6e792bd2a2503..4d4835c5a6dd22d3fbfe5c7c2bcd49f294095442 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -24,6 +24,7 @@ buildscript {
+ apply plugin: 'com.android.library'
+
+ android {
++    namespace "com.RNRSA"
+     compileSdkVersion safeExtGet('compileSdkVersion', 28)
+     buildToolsVersion safeExtGet('buildToolsVersion', '28.0.3')

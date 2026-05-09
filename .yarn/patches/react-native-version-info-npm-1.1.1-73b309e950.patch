@@ -1,0 +1,11 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index edcd4fbd3ebe44fa9f9c056ad0968bbf56873968..031853b7dd6b554a2397d32ef97b0fecfdfec1d2 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -5,6 +5,7 @@ def safeExtGet(prop, fallback) {
+ apply plugin: 'com.android.library'
+
+ android {
++    namespace "cx.evermeet.versioninfo"
+     compileSdkVersion safeExtGet('compileSdkVersion', 27)
+     buildToolsVersion safeExtGet('buildToolsVersion', '27.0.3')

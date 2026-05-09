@@ -12,6 +12,9 @@ import { PluginStates } from '@joplin/lib/services/plugins/reducer';
 import useCodeMirrorPlugins from './utils/useCodeMirrorPlugins';
 import Resource from '@joplin/lib/models/Resource';
 import { parseResourceUrl } from '@joplin/lib/urlUtils';
+import Setting from '@joplin/lib/models/Setting';
+import { getOrCreateEncryptionKey } from '../../utils/localEncryption/keyManager';
+import { decryptToDisplayFile } from '../../utils/localEncryption/resourceCrypto';
 const { isImageMimeType } = require('@joplin/lib/resourceUtils');
 
 const logger = Logger.create('markdownEditor');
@@ -152,7 +155,16 @@ const useWebViewSetup = ({
 					return null;
 				} else {
 					const path = Resource.fullPath(item);
-					return reloadCounter ? `${path}?r=${reloadCounter}` : path;
+					let displayPath = path;
+					if (shim.mobilePlatform() === 'android') {
+						const localEncryptionKey = await getOrCreateEncryptionKey();
+						displayPath = await decryptToDisplayFile(
+							path,
+							`${Setting.value('resourceDir')}/.webview_decrypted`,
+							localEncryptionKey,
+						);
+					}
+					return reloadCounter ? `${displayPath}?r=${reloadCounter}` : displayPath;
 				}
 			},
 		};

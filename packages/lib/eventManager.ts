@@ -67,7 +67,7 @@ export interface WindowCloseEvent {
 }
 
 type EventArgs = {
-	[EventName.ResourceCreate]: [];
+	[EventName.ResourceCreate]: [ResourceChangeEvent];
 	[EventName.ResourceChange]: [ResourceChangeEvent];
 	[EventName.SettingsChange]: [SettingsChangeEvent];
 	[EventName.TodoToggle]: [];

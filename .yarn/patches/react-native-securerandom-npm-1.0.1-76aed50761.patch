@@ -1,0 +1,11 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 4e725c3693f7225134b9b290eee28b84e82c44f5..fea136303af4a0366b09b7c23d9eeb59c2799812 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -28,6 +28,7 @@ def DEFAULT_MIN_SDK_VERSION = 16
+ def DEFAULT_TARGET_SDK_VERSION = 28
+
+ android {
++    namespace "net.rhogan.rnsecurerandom"
+   compileSdkVersion safeExtGet('compileSdkVersion', DEFAULT_COMPILE_SDK_VERSION)
+   buildToolsVersion safeExtGet('buildToolsVersion', DEFAULT_BUILD_TOOLS_VERSION)

@@ -756,6 +756,7 @@ export default class Synchronizer {
 								await handleCannotSyncItem(ItemClass, syncTargetId, local, 'Trying to upload resource, but only metadata is present.');
 								action = null;
 							} else {
+								let localResourceContentTempPath = null;
 								try {
 									const remoteContentPath = resourceRemotePath(local.id);
 									const result = await Resource.fullPathForSyncUpload(local);
@@ -763,6 +764,7 @@ export default class Synchronizer {
 									// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Old code before rule was applied
 									local = resource as any;
 									const localResourceContentPath = result.path;
+									localResourceContentTempPath = result.tempPath;
 
 									if (resource.size >= 10 * 1000 * 1000) {
 										logger.warn(`Uploading a large resource (resourceId: ${local.id}, size:${resource.size} bytes) which may tie up the sync process.`);
@@ -787,6 +789,14 @@ export default class Synchronizer {
 										logger.info('Resource is readonly and cannot be modified - handling it as a conflict:', local);
 									} else {
 										throw error;
+									}
+								} finally {
+									if (localResourceContentTempPath) {
+										try {
+											await shim.fsDriver().remove(localResourceContentTempPath);
+										} catch (error) {
+											logger.warn(`Could not delete temporary resource upload file: ${localResourceContentTempPath}: ${error.message}`);
+										}
 									}
 								}
 							}
