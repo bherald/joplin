@@ -538,6 +538,10 @@ const buildStartupTasks = (
 					return path;
 				}
 			};
+
+			Resource.blobContentWriteHook = async (_resource, path: string) => {
+				await encryptFileInPlace(path, localEncryptionKey);
+			};
 		}
 
 		void ResourceFetcher.instance().start();

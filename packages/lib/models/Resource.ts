@@ -74,6 +74,10 @@ export default class Resource extends BaseItem {
 	// If it returns a different (temp) path, the caller MUST delete it when done.
 	public static syncUploadDecryptHook: ((path: string)=> Promise<string>) | null = null;
 
+	// Optional hook set by app-mobile on Android to process a resource file after
+	// a blob write that doesn't go through Resource.save({ isNew: true }).
+	public static blobContentWriteHook: ((resource: ResourceEntity, path: string)=> Promise<void>) | null = null;
+
 	public static tableName() {
 		return 'resources';
 	}
@@ -477,6 +481,7 @@ export default class Resource extends BaseItem {
 		// If the above call has succeeded, we save the data blob
 
 		await this.fsDriver().copy(newBlobFilePath, Resource.fullPath(resource));
+		if (Resource.blobContentWriteHook) await Resource.blobContentWriteHook(resource, Resource.fullPath(resource));
 
 		return result;
 	}
@@ -512,7 +517,9 @@ export default class Resource extends BaseItem {
 
 		const sourcePath = Resource.fullPath(resource);
 		if (await this.fsDriver().exists(sourcePath)) {
-			await this.fsDriver().copy(sourcePath, Resource.fullPath(newResource));
+			const targetPath = Resource.fullPath(newResource);
+			await this.fsDriver().copy(sourcePath, targetPath);
+			if (Resource.blobContentWriteHook) await Resource.blobContentWriteHook(newResource, targetPath);
 		}
 
 		return newResource;

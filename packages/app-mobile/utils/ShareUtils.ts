@@ -1,6 +1,8 @@
 import Resource from '@joplin/lib/models/Resource';
 import { ResourceEntity } from '@joplin/lib/services/database/types';
 import shim from '@joplin/lib/shim';
+import { getOrCreateEncryptionKey } from './localEncryption/keyManager';
+import { decryptToDisplayFile } from './localEncryption/resourceCrypto';
 
 // when refactoring this name, make sure to refactor the `SharePackage.java` (in android) as well
 const DIR_NAME = 'sharedFiles';
@@ -18,8 +20,14 @@ export async function copyToCache(resource: ResourceEntity): Promise<string> {
 
 	const targetDir = await makeShareCacheDirectory();
 	const targetFile = `${targetDir}/${filename}`;
+	let sourceFile = Resource.fullPath(resource);
 
-	await shim.fsDriver().copy(Resource.fullPath(resource), targetFile);
+	if (shim.mobilePlatform() === 'android') {
+		const localEncryptionKey = await getOrCreateEncryptionKey();
+		sourceFile = await decryptToDisplayFile(sourceFile, targetDir, localEncryptionKey);
+	}
+
+	await shim.fsDriver().copy(sourceFile, targetFile);
 
 	return targetFile;
 }

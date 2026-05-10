@@ -47,7 +47,9 @@ JENC | version byte | 12-byte IV | 16-byte auth tag | ciphertext
 
 Startup schedules a background scan of resource records in the database and encrypts any downloaded plaintext blobs. It does not block initial rendering, and it does not encrypt every file in the resource directory because the default mobile profile stores non-resource files there too. The operation is idempotent because encrypted files start with the `JENC` header.
 
-Newly-created local attachments and downloaded resources are encrypted after their blob is written. Before note HTML is written to a mobile WebView, referenced resource files are decrypted to a hidden display cache under the resource directory and the HTML file URLs are rewritten to those temp files. Before sync upload, encrypted-at-rest resources are decrypted to a temporary `.tmp_decrypt` file; sync cleanup removes that file after upload.
+Newly-created local attachments and downloaded resources are encrypted after their blob is written. Blob updates that bypass new-resource creation, such as edited drawings and duplicated resources, run through the same local encryption hook after the file write. Before note HTML is written to a mobile WebView, referenced resource files are decrypted to a hidden display cache under the resource directory and the HTML file URLs are rewritten to those temp files. Before sync upload, encrypted-at-rest resources are decrypted to a temporary `.tmp_decrypt` file; sync cleanup removes that file after upload.
+
+When Android hands a resource to another app, such as opening an attachment with `FileViewer` or sharing a file through the platform share sheet, the encrypted resource is first copied/decrypted to a cache path and the external app receives the cache copy rather than the encrypted `JENC` file.
 
 ## Build and install notes
 
