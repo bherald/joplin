@@ -62,6 +62,18 @@ cd packages/app-mobile/android
 
 The Markdown editor runs inside a mobile WebView injected bundle. After changing editor rendering code, rebuild the injected JavaScript bundle before rebuilding the Android APK; otherwise the installed app can still contain stale editor behavior.
 
+## Known limitations and next steps
+
+This branch should be treated as a working Android fork, not an upstream-ready patch set.
+
+- The implementation has only been validated on Android. iOS still uses the existing local storage behavior.
+- The local encryption key is managed by the Android keychain through `react-native-keychain`; losing or resetting device keychain data can make locally encrypted profile data unrecoverable without a fresh sync.
+- Plaintext database backups created during migration remain on disk as `<name>.plaintext-backup-<timestamp>` and should be handled by a future migration-cleanup policy.
+- Decrypted WebView display files are temporary cache files under the resource directory and are cleared on startup, but they exist while rendered content is being displayed.
+- The injected Markdown editor bundle needs a reliable documented rebuild path. The manual rebuild workaround used during validation should be replaced with a normal workspace build command before this is proposed upstream.
+- More testing is needed for large syncs, attachment add/remove flows, export/import flows, share flows, and E2EE-enabled sync targets.
+- A release APK should be tagged only after additional day-to-day testing confirms startup, sync, rendering, and attachment handling remain stable.
+
 ## Verification checklist
 
 - Fresh Android install creates and opens encrypted SQLCipher profile and log databases.
