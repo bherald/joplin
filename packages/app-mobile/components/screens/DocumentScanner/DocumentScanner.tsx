@@ -18,6 +18,7 @@ import useBackHandler from '../../../utils/hooks/useBackHandler';
 import Logger from '@joplin/utils/Logger';
 import NavService from '@joplin/lib/services/NavService';
 import { ResourceOcrDriverId, ResourceOcrStatus } from '@joplin/lib/services/database/types';
+import { cleanupTemporaryAttachmentSource } from '../../../utils/temporaryAttachmentSource';
 
 const logger = Logger.create('DocumentScanner');
 
@@ -83,20 +84,24 @@ const DocumentScanner: React.FC<Props> = ({ themeId, dispatch }) => {
 		try {
 			const resources = [];
 			for (const image of photos) {
-				resources.push(await shim.createResourceFromPath(
-					image.uri,
-					{
-						...(event.queueForTranscription ? {
-							ocr_status: ResourceOcrStatus.Todo,
-							ocr_driver_id: ResourceOcrDriverId.HandwrittenText,
-							ocr_details: '',
-							ocr_error: '',
-							ocr_text: '',
-						} : {}),
-						title: event.title,
-						mime: image.type,
-					},
-				));
+				try {
+					resources.push(await shim.createResourceFromPath(
+						image.uri,
+						{
+							...(event.queueForTranscription ? {
+								ocr_status: ResourceOcrStatus.Todo,
+								ocr_driver_id: ResourceOcrDriverId.HandwrittenText,
+								ocr_details: '',
+								ocr_error: '',
+								ocr_text: '',
+							} : {}),
+							title: event.title,
+							mime: image.type,
+						},
+					));
+				} finally {
+					await cleanupTemporaryAttachmentSource(image.uri);
+				}
 			}
 
 			const note = await Note.save({

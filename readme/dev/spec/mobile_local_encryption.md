@@ -26,6 +26,15 @@ Validated on a Samsung Galaxy tablet attached over USB:
 
 The final tablet test confirmed that notes with embedded imported HTML image tags render images instead of showing raw `<img>` tags after rebuilding the mobile injected editor bundle and reinstalling the APK.
 
+Additional Android emulator validation on `HeliBoard_Test` confirmed:
+
+- Fresh note creation works against the encrypted SQLCipher databases.
+- Camera-created image resources are encrypted under app-private `files/` storage.
+- The WebView decrypted display cache is recreated after restart and encrypted source resources still render.
+- Filesystem sync uploads decrypted resource bytes to the sync target while keeping app-private resource files encrypted at rest.
+- Sync-upload `.tmp_decrypt` files are removed after upload.
+- Camera source files written by Android under app-private `cache/Camera/` are deleted after they have been copied into encrypted Joplin resources.
+
 ## Key storage
 
 The local encryption key is generated on first Android startup and stored with `react-native-keychain` under the `net.cozic.joplin.localEncryption` service. The in-memory copy is cached only for the current process.
@@ -48,6 +57,8 @@ JENC | version byte | 12-byte IV | 16-byte auth tag | ciphertext
 Startup schedules a background scan of resource records in the database and encrypts any downloaded plaintext blobs. It does not block initial rendering, and it does not encrypt every file in the resource directory because the default mobile profile stores non-resource files there too. The operation is idempotent because encrypted files start with the `JENC` header.
 
 Newly-created local attachments and downloaded resources are encrypted after their blob is written. Blob updates that bypass new-resource creation, such as edited drawings and duplicated resources, run through the same local encryption hook after the file write. Before note HTML is written to a mobile WebView, referenced resource files are decrypted to a hidden display cache under the resource directory and the HTML file URLs are rewritten to those temp files. Before sync upload, encrypted-at-rest resources are decrypted to a temporary `.tmp_decrypt` file; sync cleanup removes that file after upload.
+
+Camera captures are first written by Android to app-private cache storage. After the normal note attachment flow or document-scanner flow copies the capture into a Joplin resource, the temporary camera source file is removed so it does not remain as a plaintext cache copy.
 
 When Android hands a resource to another app, such as opening an attachment with `FileViewer` or sharing a file through the platform share sheet, the encrypted resource is first copied/decrypted to a cache path and the external app receives the cache copy rather than the encrypted `JENC` file.
 
@@ -73,7 +84,7 @@ This branch should be treated as a working Android fork, not an upstream-ready p
 - Plaintext database backups created during migration remain on disk as `<name>.plaintext-backup-<timestamp>` and should be handled by a future migration-cleanup policy.
 - Decrypted WebView display files are temporary cache files under the resource directory and are cleared on startup, but they exist while rendered content is being displayed.
 - The injected Markdown editor bundle needs a reliable documented rebuild path. The manual rebuild workaround used during validation should be replaced with a normal workspace build command before this is proposed upstream.
-- More testing is needed for large syncs, attachment add/remove flows, export/import flows, share flows, and E2EE-enabled sync targets.
+- More testing is needed for large syncs, export/import flows, share flows, document-scanner flows, and E2EE-enabled sync targets.
 - A release APK should be tagged only after additional day-to-day testing confirms startup, sync, rendering, and attachment handling remain stable.
 
 ## Verification checklist
@@ -83,4 +94,5 @@ This branch should be treated as a working Android fork, not an upstream-ready p
 - Notes with image/file resources render in the viewer after restart.
 - Sync upload sends normal resource bytes, not `JENC` resource bytes.
 - Downloaded resources and newly-created local resources are encrypted on disk.
+- Temporary camera source cache files are removed after attachment creation.
 - Joplin sync E2EE still produces encrypted sync-target resource blobs when enabled.

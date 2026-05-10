@@ -75,6 +75,7 @@ import { EditorType } from '../../NoteEditor/types';
 import { IconButton } from 'react-native-paper';
 import { writeTextToCacheFile } from '../../../utils/ShareUtils';
 import shareFile from '../../../utils/shareFile';
+import { cleanupTemporaryAttachmentSource } from '../../../utils/temporaryAttachmentSource';
 import NotePositionService from '@joplin/lib/services/NotePositionService';
 import useKeyboardState from '../../../utils/hooks/useKeyboardState';
 import VoiceTyping from '../../../services/voiceTyping/VoiceTyping';
@@ -995,6 +996,7 @@ class NoteScreenComponent extends BaseScreenComponent<ComponentProps, State> imp
 			}
 		} catch (error) {
 			reg.logger().warn('Could not attach file:', error);
+			await cleanupTemporaryAttachmentSource(localFilePath);
 			await this.props.dialogs.error(error.message);
 			return null;
 		}
@@ -1013,6 +1015,7 @@ class NoteScreenComponent extends BaseScreenComponent<ComponentProps, State> imp
 		void this.refreshResource(resource, newNote.body);
 
 		this.scheduleSave({ ...this.state, note: newNote });
+		await cleanupTemporaryAttachmentSource(localFilePath);
 
 		return resource;
 	}
